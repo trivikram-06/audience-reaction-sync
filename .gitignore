@@ -9,6 +9,12 @@ __pycache__/
 # VS Code
 .vscode/
 
-# OS files
+# OS
 .DS_Store
 Thumbs.db
+
+# YOLO Models
+*.pt
+
+# Generated Logs
+outputs/logs/

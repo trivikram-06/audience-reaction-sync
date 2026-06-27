@@ -12,22 +12,15 @@ face_mesh = mp_face_mesh.FaceMesh(
     min_tracking_confidence=0.5
 )
 
-mp_draw = mp.solutions.drawing_utils
+mp_drawing = mp.solutions.drawing_utils
 
-drawing_spec = mp_draw.DrawingSpec(
-    color=(0, 255, 0),
-    thickness=1,
-    circle_radius=1
-)
-
-# Open Webcam
 cap = cv2.VideoCapture(0)
 
 while True:
 
-    ret, frame = cap.read()
+    success, frame = cap.read()
 
-    if not ret:
+    if not success:
         break
 
     rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -36,17 +29,15 @@ while True:
 
     if results.multi_face_landmarks:
 
-        for face_landmarks in results.multi_face_landmarks:
+        for landmarks in results.multi_face_landmarks:
 
-            mp_draw.draw_landmarks(
+            mp_drawing.draw_landmarks(
                 frame,
-                face_landmarks,
-                mp_face_mesh.FACEMESH_TESSELATION,
-                landmark_drawing_spec=drawing_spec,
-                connection_drawing_spec=drawing_spec
+                landmarks,
+                mp_face_mesh.FACEMESH_TESSELATION
             )
 
-    cv2.imshow("MediaPipe Face Mesh", frame)
+    cv2.imshow("Face Mesh", frame)
 
     if cv2.waitKey(1) & 0xFF == ord("q"):
         break
