@@ -5,12 +5,21 @@ from modules.landmark import process_face
 from modules.features import eye_aspect_ratio, mouth_aspect_ratio
 from modules.blink import BlinkDetector
 from modules.logger import FeatureLogger
+from modules.head_pose import estimate_head_pose
+from modules.attention import AttentionEngine
+from modules.predictor import Predictor
 
-# Initialize modules
+# ---------------------------------------
+# Initialize Modules
+# ---------------------------------------
 blink_detector = BlinkDetector()
+attention_engine = AttentionEngine()
 logger = FeatureLogger()
+predictor = Predictor()
 
-# Open webcam
+# ---------------------------------------
+# Webcam
+# ---------------------------------------
 cap = cv2.VideoCapture(0)
 
 while True:
@@ -20,7 +29,9 @@ while True:
     if not success:
         break
 
-    # Detect + Track people
+    # ---------------------------------------
+    # Detect People
+    # ---------------------------------------
     results = detect_people(frame)
 
     if (
@@ -31,17 +42,16 @@ while True:
 
         boxes = results[0].boxes.xyxy.cpu().numpy()
 
-        # Get tracking IDs (if available)
+        # Tracking IDs
         if results[0].boxes.id is not None:
             ids = results[0].boxes.id.int().cpu().tolist()
         else:
-            ids = [1] * len(boxes)
+            ids = list(range(1, len(boxes) + 1))
 
         for box, person_id in zip(boxes, ids):
 
             x1, y1, x2, y2 = map(int, box)
 
-            # Keep coordinates inside frame
             h, w = frame.shape[:2]
 
             x1 = max(0, x1)
@@ -54,100 +64,124 @@ while True:
             if crop.size == 0:
                 continue
 
+            # ---------------------------------------
             # Face Mesh
+            # ---------------------------------------
             crop, landmarks = process_face(crop)
 
             if landmarks:
 
-                # Features
+                # ---------------------------------------
+                # Feature Extraction
+                # ---------------------------------------
                 ear = eye_aspect_ratio(landmarks)
                 mar = mouth_aspect_ratio(landmarks)
 
                 # Blink Detection
                 eye_status, blink_count = blink_detector.update(ear)
 
-                # Save features to CSV
-                logger.log(
-                    person_id,
+                # Head Pose
+                yaw, pitch, roll = estimate_head_pose(landmarks)
+
+                # Attention Score
+                attention = attention_engine.calculate(
                     ear,
-                    mar,
                     eye_status,
                     blink_count
                 )
 
-                # Display Tracking ID
-                cv2.putText(
+                # AI Engagement Prediction
+                engagement = predictor.predict(
+                    ear,
+                    mar,
+                    blink_count,
+                    yaw,
+                    pitch,
+                    roll,
+                    attention
+                )
+
+                # ---------------------------------------
+                # CSV Logging
+                # ---------------------------------------
+                logger.log(
+                     person_id,
+                     ear,
+                     mar,
+                     eye_status,
+                     blink_count,
+                     yaw,
+                     pitch,
+                     roll,
+                     attention,
+                     engagement
+                )
+
+                # ---------------------------------------
+                # Draw Bounding Box
+                # ---------------------------------------
+                cv2.rectangle(
                     frame,
-                    f"ID: {person_id}",
-                    (x1, y1 - 110),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.6,
+                    (x1, y1),
+                    (x2, y2),
                     (0, 255, 0),
                     2
                 )
 
-                # EAR
-                cv2.putText(
-                    frame,
-                    f"EAR: {ear:.2f}",
-                    (x1, y1 - 85),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.6,
+                # ---------------------------------------
+                # Information Panel
+                # ---------------------------------------
+                info_x = x1
+                info_y = max(25, y1 - 220)
+
+                lines = [
+                    f"ID : {person_id}",
+                    f"EAR : {ear:.2f}",
+                    f"MAR : {mar:.2f}",
+                    f"Eyes : {eye_status}",
+                    f"Blinks : {blink_count}",
+                    f"Yaw : {yaw:.1f}",
+                    f"Pitch : {pitch:.1f}",
+                    f"Roll : {roll:.1f}",
+                    f"Attention : {attention}%",
+                    f"Engagement : {engagement:.1f}%"
+                ]
+
+                colors = [
+                    (0, 255, 0),
                     (0, 255, 255),
-                    2
-                )
-
-                # MAR
-                cv2.putText(
-                    frame,
-                    f"MAR: {mar:.2f}",
-                    (x1, y1 - 60),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.6,
                     (0, 255, 255),
-                    2
-                )
-
-                # Eye Status
-                cv2.putText(
-                    frame,
-                    f"Eyes: {eye_status}",
-                    (x1, y1 - 35),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.6,
                     (255, 255, 0),
-                    2
-                )
-
-                # Blink Count
-                cv2.putText(
-                    frame,
-                    f"Blinks: {blink_count}",
-                    (x1, y1 - 10),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.6,
                     (255, 255, 0),
-                    2
-                )
+                    (255, 255, 255),
+                    (255, 255, 255),
+                    (255, 255, 255),
+                    (0, 255, 255),
+                    (0, 255, 0)
+                ]
 
-            # Put processed crop back
+                for i, (text, color) in enumerate(zip(lines, colors)):
+                    cv2.putText(
+                        frame,
+                        text,
+                        (info_x, info_y + i * 22),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.6,
+                        color,
+                        2
+                    )
+
+            # Put processed face back
             frame[y1:y2, x1:x2] = crop
-
-            # Draw Bounding Box
-            cv2.rectangle(
-                frame,
-                (x1, y1),
-                (x2, y2),
-                (0, 255, 0),
-                2
-            )
 
     cv2.imshow("Audience Reaction Sync", frame)
 
     if cv2.waitKey(1) & 0xFF == ord("q"):
         break
 
+# ---------------------------------------
 # Cleanup
+# ---------------------------------------
 logger.close()
 cap.release()
 cv2.destroyAllWindows()
